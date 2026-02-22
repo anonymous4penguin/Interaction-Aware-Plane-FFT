@@ -1,0 +1,144 @@
+module r2sdf_stage6bit #(
+    parameter DELAY = 1024
+)(
+    input                clk,
+    input                rst,
+    input                valid_in,
+    input  signed [15:0] xr_in,
+    input  signed [15:0] xi_in,
+    input  [10:0]         twiddle,
+
+    output reg signed [15:0] xr_out,
+    output reg signed [15:0] xi_out,
+    output reg               valid_out,
+
+    output reg               butterfly_en
+);
+    // Phase counter
+ 
+    reg [$clog2(2*DELAY)-1:0] phase;
+
+    always @(posedge clk) begin
+        if (rst)
+            phase <= 0;
+        else if (valid_in)
+            phase <= (phase == 2*DELAY-1) ? 0 : phase + 1;
+    end
+
+    // Butterfly enable (base domain)
+    always @(posedge clk) begin
+        if (rst)
+            butterfly_en <= 0;
+        else if (valid_in)
+            butterfly_en <= (phase >= DELAY);
+    end
+
+    // Delay line
+
+    reg signed [15:0] delay_r [0:DELAY-1];
+    reg signed [15:0] delay_i [0:DELAY-1];
+    integer i;
+
+    // FULL PIPELINE ALIGNMENT
+
+    reg signed [15:0] ar, ai;
+    reg signed [15:0] br_d1, bi_d1;
+    reg               bf_d1;
+    reg [10:0]         tw_d1;
+    reg               valid_d1;
+
+    always @(posedge clk) begin
+        if (rst) begin
+            ar <= 0;
+            ai <= 0;
+            br_d1 <= 0;
+            bi_d1 <= 0;
+            bf_d1 <= 0;
+            tw_d1 <= 0;
+            valid_d1 <= 0;
+        end
+        else if (valid_in) begin
+            ar <= delay_r[DELAY-1];
+            ai <= delay_i[DELAY-1];
+
+            br_d1 <= xr_in;
+            bi_d1 <= xi_in;
+
+            bf_d1 <= butterfly_en;
+            tw_d1 <= twiddle;
+            valid_d1 <= valid_in;
+        end
+    end
+
+    // Butterfly math (fully aligned)
+
+    wire signed [15:0] sumr  = ar + br_d1;
+    wire signed [15:0] sumi  = ai + bi_d1;
+    wire signed [15:0] diffr = ar - br_d1;
+    wire signed [15:0] diffi = ai - bi_d1;
+
+    // Twiddle multiply
+
+    wire signed [31:0] mulr, muli;
+
+    approx_complex_mul6bit ACM (
+        .xr(diffr),
+        .xi(diffi),
+        .a(tw_d1),
+        .yr(mulr),
+        .yi(muli)
+    );
+
+    // Delay update
+
+    always @(posedge clk) begin
+        if (rst) begin
+            for (i = 0; i < DELAY; i = i + 1) begin
+                delay_r[i] <= 0;
+                delay_i[i] <= 0;
+            end
+        end
+        else if (valid_d1) begin
+
+            for (i = DELAY-1; i > 0; i = i - 1) begin
+                delay_r[i] <= delay_r[i-1];
+                delay_i[i] <= delay_i[i-1];
+            end
+
+            if (!bf_d1) begin
+                delay_r[0] <= br_d1;
+                delay_i[0] <= bi_d1;
+            end
+            else begin
+                delay_r[0] <= mulr[30:15];
+                delay_i[0] <= muli[30:15];
+            end
+        end
+    end
+
+    // Output
+
+    always @(posedge clk) begin
+        if (rst) begin
+            xr_out <= 0;
+            xi_out <= 0;
+            valid_out <= 0;
+        end
+        else if (valid_d1) begin
+            valid_out <= 1;
+
+            if (!bf_d1) begin
+                xr_out <= br_d1 >>> 1;
+                xi_out <= bi_d1 >>> 1;
+            end
+            else begin
+                xr_out <= sumr >>> 1;
+                xi_out <= sumi >>> 1;
+            end
+        end
+        else begin
+            valid_out <= 0;
+        end
+    end
+
+endmodule
