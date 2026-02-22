@@ -1,0 +1,46 @@
+module twiddle_gen #(
+    parameter STAGE = 0,
+    parameter N = 2048
+)(
+    input clk,
+    input rst,
+    input valid,
+    input butterfly_en,
+    output [10:0] a
+);
+
+localparam LOGN = $clog2(N);
+
+localparam TW_MAX =
+    (1 << (LOGN - STAGE - 1));
+
+localparam CNT_WIDTH =
+    (TW_MAX <= 1) ? 1 : $clog2(TW_MAX);
+
+reg [CNT_WIDTH-1:0] tw_cnt;
+reg butterfly_en_d;
+
+always @(posedge clk) begin
+    if (rst)
+        butterfly_en_d <= 0;
+    else
+        butterfly_en_d <= butterfly_en;
+end
+
+wire new_block = butterfly_en & ~butterfly_en_d;
+
+always @(posedge clk) begin
+    if (rst || new_block)
+        tw_cnt <= 0;
+    else if (valid && butterfly_en) begin
+        if (tw_cnt == TW_MAX-1)
+            tw_cnt <= 0;
+        else
+            tw_cnt <= tw_cnt + 1;
+    end
+end
+
+wire [LOGN-1:0] k_stage = tw_cnt << (STAGE);
+assign a = k_stage;
+
+endmodule
