@@ -1,0 +1,102 @@
+module approx_cm_top4bit (
+    input  signed [15:0] xre,
+    input         [10:0]  a,
+    output signed [15:0] y_sin,
+    output signed [15:0] y_cos
+);
+
+    // Magnitude extraction
+
+    wire        sign_x;
+    wire [14:0] abs_app;
+
+    approx_abs U_ABS (
+        .x(xre),
+        .abs_app(abs_app),
+        .sign(sign_x)
+    );
+
+    wire [3:0]  e;
+    wire [12:0] m;
+
+    em_extract U_EM (
+        .abs_app(abs_app),
+        .e(e),
+        .m(m)
+    );
+
+    // Angle folding
+    // a[9] = quadrant (π offset)
+    // a[8:0] = fractional angle in [0, π)
+    
+    wire [9:0] a_frac = a[9:0];
+    wire [9:0] inv    = 10'd1023 - a_frac;   // FIXED: was 512-a_frac
+
+    wire [9:0] a_sin = a[10] ? inv    : a_frac;
+    wire [9:0] a_cos = a[10] ? a_frac : inv;
+
+    wire sin_neg = sign_x;
+    wire cos_neg = sign_x ^ a[10];
+
+    // Surface fit (Q2.14)
+
+    wire [15:0] sf_sin_un;
+    wire [15:0] sf_cos_un;
+
+    surface_fit_sin4bit U_SF_SIN (
+        .m(m),
+        .a(a_sin),
+        .y(sf_sin_un)
+    );
+
+    surface_fit_sin4bit U_SF_COS (
+        .m(m),
+        .a(a_cos),
+        .y(sf_cos_un)
+    );
+
+
+    // Scaling
+    // |x| = 2^e · (1+m)
+    // sf_*_un = (1+m)·sin/cos in Q2.14
+    // Result wanted in Q1.15
+    //
+    // Net shift = (e - 13)
+
+    reg signed [15:0] sin_val, cos_val;
+
+    always @(*) begin
+        if (abs_app == 0) begin
+            sin_val = 16'sd0;
+            cos_val = 16'sd0;
+        end else begin
+            case (e)
+                4'd0:  begin sin_val = $signed(sf_sin_un) >>> 13; cos_val = $signed(sf_cos_un) >>> 13; end
+                4'd1:  begin sin_val = $signed(sf_sin_un) >>> 12; cos_val = $signed(sf_cos_un) >>> 12; end
+                4'd2:  begin sin_val = $signed(sf_sin_un) >>> 11; cos_val = $signed(sf_cos_un) >>> 11; end
+                4'd3:  begin sin_val = $signed(sf_sin_un) >>> 10; cos_val = $signed(sf_cos_un) >>> 10; end
+                4'd4:  begin sin_val = $signed(sf_sin_un) >>> 9;  cos_val = $signed(sf_cos_un) >>> 9;  end
+                4'd5:  begin sin_val = $signed(sf_sin_un) >>> 8;  cos_val = $signed(sf_cos_un) >>> 8;  end
+                4'd6:  begin sin_val = $signed(sf_sin_un) >>> 7;  cos_val = $signed(sf_cos_un) >>> 7;  end
+                4'd7:  begin sin_val = $signed(sf_sin_un) >>> 6;  cos_val = $signed(sf_cos_un) >>> 6;  end
+                4'd8:  begin sin_val = $signed(sf_sin_un) >>> 5;  cos_val = $signed(sf_cos_un) >>> 5;  end
+                4'd9:  begin sin_val = $signed(sf_sin_un) >>> 4;  cos_val = $signed(sf_cos_un) >>> 4;  end
+                4'd10: begin sin_val = $signed(sf_sin_un) >>> 3;  cos_val = $signed(sf_cos_un) >>> 3;  end
+                4'd11: begin sin_val = $signed(sf_sin_un) >>> 2;  cos_val = $signed(sf_cos_un) >>> 2;  end
+                4'd12: begin sin_val = $signed(sf_sin_un) >>> 1;  cos_val = $signed(sf_cos_un) >>> 1;  end
+                4'd13: begin sin_val = $signed(sf_sin_un);        cos_val = $signed(sf_cos_un);        end
+                4'd14: begin sin_val = $signed(sf_sin_un) <<< 1;  cos_val = $signed(sf_cos_un) <<< 1;  end
+                default: begin
+                    sin_val = 16'sd32767;
+                    cos_val = 16'sd32767;
+                end
+            endcase
+        end
+    end
+
+    // Sign restore
+
+    assign y_sin = sin_neg ? -sin_val : sin_val;
+    assign y_cos = cos_neg ? -cos_val : cos_val;
+
+endmodule
