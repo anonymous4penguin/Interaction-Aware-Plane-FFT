@@ -1,0 +1,34 @@
+module approx_complex_mul2bit (
+    input  signed [15:0] xr,
+    input  signed [15:0] xi,
+    input         [10:0]  a,
+    output signed [31:0] yr,
+    output signed [31:0] yi
+);
+
+    wire signed [15:0] xr_cos, xr_sin;
+    wire signed [15:0] xi_cos, xi_sin;
+
+    approx_cm_top2bit CM_XR (
+        .xre(xr),
+        .a(a),
+        .y_sin(xr_sin),
+        .y_cos(xr_cos)
+    );
+
+    approx_cm_top2bit CM_XI (
+        .xre(xi),
+        .a(a),
+        .y_sin(xi_sin),
+        .y_cos(xi_cos)
+    );
+
+    wire signed [31:0] xr_cos_ext = {{16{xr_cos[15]}}, xr_cos};
+    wire signed [31:0] xi_sin_ext = {{16{xi_sin[15]}}, xi_sin};
+    wire signed [31:0] xi_cos_ext = {{16{xi_cos[15]}}, xi_cos};
+    wire signed [31:0] xr_sin_ext = {{16{xr_sin[15]}}, xr_sin};
+
+    assign yr = xr_cos_ext - xi_sin_ext;
+    assign yi = xi_cos_ext + xr_sin_ext;
+
+endmodule
