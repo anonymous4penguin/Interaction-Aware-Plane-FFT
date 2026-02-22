@@ -1,0 +1,59 @@
+module em_extract (
+    input  [14:0] abs_app,
+    output [3:0]  e,
+    output [12:0] m
+);
+
+    reg [3:0]  e_reg;
+    reg [12:0] m_reg;
+    reg [14:0] shifted;
+    integer i;
+    reg found;
+
+    always @(*) begin
+        e_reg = 4'd0;
+        m_reg = 13'd0;
+        found = 1'b0;
+        
+        if (abs_app == 15'd0) begin
+            e_reg = 4'd0;
+            m_reg = 13'd0;
+        end else begin
+            // Priority encoder to find MSB
+            for (i = 14; i >= 0; i = i - 1) begin
+                if (!found && abs_app[i]) begin
+                    e_reg = i[3:0];
+                    found = 1'b1;
+                end
+            end
+            
+            // Normalize by shifting left to align MSB at position 14
+            // Then extract bits [13:1] as the 13-bit mantissa
+            case (e_reg)
+                4'd0:  shifted = abs_app << 14;
+                4'd1:  shifted = abs_app << 13;
+                4'd2:  shifted = abs_app << 12;
+                4'd3:  shifted = abs_app << 11;
+                4'd4:  shifted = abs_app << 10;
+                4'd5:  shifted = abs_app << 9;
+                4'd6:  shifted = abs_app << 8;
+                4'd7:  shifted = abs_app << 7;
+                4'd8:  shifted = abs_app << 6;
+                4'd9:  shifted = abs_app << 5;
+                4'd10: shifted = abs_app << 4;
+                4'd11: shifted = abs_app << 3;
+                4'd12: shifted = abs_app << 2;
+                4'd13: shifted = abs_app << 1;
+                4'd14: shifted = abs_app;
+                default: shifted = abs_app;
+            endcase
+            
+            // Extract mantissa: bits [13:1] after normalization
+            m_reg = shifted[12:0];
+        end
+    end
+
+    assign e = e_reg;
+    assign m = m_reg;
+
+endmodule
