@@ -1,0 +1,118 @@
+module fft_2048_r2sdf (
+    input                clk,
+    input                rst,
+    input                valid_in,
+    input  signed [15:0] xr_in,
+    input  signed [15:0] xi_in,
+    output signed [15:0] xr_out,
+    output signed [15:0] xi_out,
+    output               valid_out
+);
+
+    wire signed [15:0] xr [0:`STAGES];
+    wire signed [15:0] xi [0:`STAGES];
+    wire               v  [0:`STAGES];
+    wire [10:0]        tw [0:`STAGES-1];
+    wire               bf [0:`STAGES-1];
+
+    assign xr[0] = xr_in;
+    assign xi[0] = xi_in;
+    assign v[0]  = valid_in;
+
+    genvar s;
+    generate
+        for (s = 0; s < `STAGES; s = s + 1) begin : STAGE_GEN
+
+            // Stage Instantiation (SAFE EXPLICIT PORT MAP)
+
+
+            if (s == 0) begin
+                r2sdf_stage2bit #(
+                    .DELAY(1 << (`STAGES-1-s))
+                ) ST (
+                    .clk(clk),
+                    .rst(rst),
+                    .valid_in(v[s]),
+                    .xr_in(xr[s]),
+                    .xi_in(xi[s]),
+                    .twiddle(tw[s]),
+                    .xr_out(xr[s+1]),
+                    .xi_out(xi[s+1]),
+                    .valid_out(v[s+1]),
+                    .butterfly_en(bf[s])
+                );
+            end
+
+            else if (s == 1 || s == 2) begin
+                r2sdf_stage4bit #(
+                    .DELAY(1 << (`STAGES-1-s))
+                ) ST (
+                    .clk(clk),
+                    .rst(rst),
+                    .valid_in(v[s]),
+                    .xr_in(xr[s]),
+                    .xi_in(xi[s]),
+                    .twiddle(tw[s]),
+                    .xr_out(xr[s+1]),
+                    .xi_out(xi[s+1]),
+                    .valid_out(v[s+1]),
+                    .butterfly_en(bf[s])
+                );
+            end
+
+            else if (s == 3 || s == 4 || s == 5 || s == 6 ||
+                     s == 8 || s == 9) begin
+                r2sdf_stage6bit #(
+                    .DELAY(1 << (`STAGES-1-s))
+                ) ST (
+                    .clk(clk),
+                    .rst(rst),
+                    .valid_in(v[s]),
+                    .xr_in(xr[s]),
+                    .xi_in(xi[s]),
+                    .twiddle(tw[s]),
+                    .xr_out(xr[s+1]),
+                    .xi_out(xi[s+1]),
+                    .valid_out(v[s+1]),
+                    .butterfly_en(bf[s])
+                );
+            end
+
+            else begin // s == 7 or s == 10
+                r2sdf_stage8bit #(
+                    .DELAY(1 << (`STAGES-1-s))
+                ) ST (
+                    .clk(clk),
+                    .rst(rst),
+                    .valid_in(v[s]),
+                    .xr_in(xr[s]),
+                    .xi_in(xi[s]),
+                    .twiddle(tw[s]),
+                    .xr_out(xr[s+1]),
+                    .xi_out(xi[s+1]),
+                    .valid_out(v[s+1]),
+                    .butterfly_en(bf[s])
+                );
+            end
+
+            // Twiddle Generator
+
+            twiddle_gen #(
+                .STAGE(s),
+                .N(`FFT_POINTS)
+            ) TW (
+                .clk(clk),
+                .rst(rst),
+                .valid(v[s]),
+                .butterfly_en(bf[s]),
+                .a(tw[s])
+            );
+
+        end
+    endgenerate
+
+    assign xr_out    = xr[`STAGES];
+    assign xi_out    = xi[`STAGES];
+    assign valid_out = v[`STAGES];
+
+endmodule
