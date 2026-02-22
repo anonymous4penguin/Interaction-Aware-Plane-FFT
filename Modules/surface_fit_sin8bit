@@ -1,0 +1,110 @@
+module surface_fit_sin8bit (
+    input  [12:0] m,
+    input  [9:0]  a,
+    output [15:0] y
+);
+
+    wire [2:0] sel = a[8:6];
+
+
+wire [15:0] m0 = m;  
+
+    wire [15:0] m1 = m0 >> 1;
+    wire [15:0] m2 = m0 >> 2;
+    wire [15:0] m3 = m0 >> 3;
+    wire [15:0] m4 = m0 >> 4;
+    wire [15:0] m5 = m0 >> 5;
+    wire [15:0] m6 = m0 >> 6;
+    wire [15:0] m7 = m0 >> 7;
+    wire [15:0] m8 = m0 >> 8;
+
+    // Angle is already in correct format for Q2.14 computation
+    wire [15:0] a0 = {a};
+    wire [15:0] a1 = a0 >> 1;
+    wire [15:0] a2 = a0 >> 2;
+    wire [15:0] a3 = a0 >> 3;
+    wire [15:0] a4 = a0 >> 4;
+    wire [15:0] a5 = a0 >> 5;
+    wire [15:0] a6 = a0 >> 6;
+    wire [15:0] a8 = a0 >> 8;
+
+    // Interaction term: (1+m) * a approximation using bit-slicing
+// a is Q0.8 → divide by 2^8
+wire [15:0] ma =
+    (a[7] ? (m0 >> 1) : 0) +
+    (a[6] ? (m0 >> 2) : 0) +
+    (a[5] ? (m0 >> 3) : 0) +
+    (a[4] ? (m0 >> 4) : 0) +
+    (a[3] ? (m0 >> 5) : 0) +
+    (a[2] ? (m0 >> 6) : 0) +
+    (a[1] ? (m0 >> 7) : 0) +
+    (a[0] ? (m0 >> 8) : 0);
+
+
+reg [15:0] pm_m, pa_a, pma_ma;
+
+    reg signed [15:0] b;
+
+    always @(*) begin
+        pm_m  = 0;
+        pa_a  = 0;
+        pma_ma = 0;
+        b     = 0;
+
+        case (sel)
+            3'd0: begin
+                pm_m   = 16'd0;
+                pa_a   = a0 + a1 + a4;
+                pma_ma = ma + (ma >> 1) + (ma >> 4);
+                b      = 16'sd4;
+            end
+            3'd1: begin
+                pm_m   = m7;
+                pa_a   = a0 + a1;
+                pma_ma = ma + (ma >> 1);
+                b      = 16'sd134;
+            end
+            3'd2: begin
+                pm_m   = m5;
+                pa_a   = a0 + a2 + a3;
+                pma_ma = ma + (ma >> 2) + (ma >> 3);
+                b      = 16'sd623;
+            end
+            3'd3: begin
+                pm_m   = m4;
+                pa_a   = a0 + a3 + a4;
+                pma_ma = ma + (ma >> 3) + (ma >> 4);
+                b      = 16'sd1680;
+            end
+            3'd4: begin
+                pm_m   = m3 + m5;
+                pa_a   = a0 - a8;
+                pma_ma = ma - (ma >> 8);
+                b      = 16'sd3472;
+            end
+            3'd5: begin
+                pm_m   = m2 + m4;
+                pa_a   = a1 + a2 - a4;
+                pma_ma = (ma >> 1) + (ma >> 2) - (ma >> 4);
+                b      = 16'sd6094;
+            end
+            3'd6: begin
+                pm_m   = m1 + m4;
+                pa_a   = a1 - a5 - a6;
+                pma_ma = (ma >> 1) - (ma >> 5) - (ma >> 6);
+                b      = 16'sd9587;
+            end
+            3'd7: begin
+                pm_m   = m0 - m3;
+                pa_a   = a3 + a5 - a8;
+                pma_ma = (ma >> 3) + (ma >> 5) - (ma >> 8);
+                b      = 16'sd13928;
+            end
+        endcase
+    end
+
+    wire sum = $signed(pm_m) + $signed(pa_a) + $signed(pma_ma) + $signed(b);
+
+    assign y = sum;
+
+endmodule
